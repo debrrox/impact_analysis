@@ -6,8 +6,9 @@ from email import policy
 from email.parser import BytesParser
 from bs4 import BeautifulSoup, Comment
 import pandas as pd
+import langdetect
 
-COLUMNS = ['Title', 'Source', 'Summary', 'Date', 'State', 'Website']
+COLUMNS = ['Title', 'Source', 'Summary', 'Date', 'State', 'Website', 'Language']
 
 def extract_links_from_talkwalker(eml_file_path):
     with open(eml_file_path, 'rb') as file:
@@ -45,17 +46,19 @@ def extract_links_from_talkwalker(eml_file_path):
                 date = None
                 state = None
                 website = None
+                lang_sum = None
                 for td in element.find_all('td'):
                     date_state_website = td.text.strip().split(' | ')
-                    if td.text.strip()[:3]=="..."  and  td.text.strip()[-3:]=="..." :
+                    if td.text.strip()[:3]=="..."  or  td.text.strip()[-3:]=="..." :
                         summary = td.text.strip()
+                        lang_sum = langdetect.detect(summary)
                     elif len(date_state_website) == 3:
                         if len(date_state_website[0]) < 15:
                             date = datetime.strptime(date_state_website[0], '%d.%m.%y %H:%M')
                             state = date_state_website[1]
                             website = date_state_website[2]
                 if title and "alerts.talkwalker.com" not in source and date:
-                    data.append([title, source, summary, date, state, website])
+                    data.append([title, source, summary, date, state, website, lang_sum])
 
         # Create DataFrame
         df = pd.DataFrame(data, columns=COLUMNS)
@@ -69,10 +72,12 @@ def remove_non_articles(df):
     return df
 
 def save_csv(df, output_csv_path):
-    if os.path.exists(output_csv_path):
+    """if os.path.exists(output_csv_path):
         df.to_csv(output_csv_path, mode='a', index=False, header=False)
     else:
         df.to_csv(output_csv_path, mode='w', index=False, header=True)
+    """
+    df.to_csv(output_csv_path, mode='w', index=False, header=True)
 
 def extract_links_from_eml(eml_file_path):
     # Open the eml file in binary mode
@@ -99,18 +104,19 @@ def main():# Call the function and print the extracted links
         df = pd.DataFrame(columns=COLUMNS)
     input_folder = "./input"
     talkwalker_folder = os.path.join(input_folder, "talkwalker")
-    print(talkwalker_folder)
     for eml_file_path in glob.glob(os.path.join(talkwalker_folder, "*")):
-        print(eml_file_path)
         df_new = extract_links_from_talkwalker(eml_file_path)
         df_new = remove_non_articles(df_new)
         df = pd.concat([df, df_new], ignore_index=True)
-        df = df.drop_duplicates()
+        df.drop_duplicates(inplace=True, ignore_index=True)
     save_csv(df, "./output/alerts.csv")
 
-    # TODO remove useless
-    # TODO fix summary
-    # TODO go into the website and check for the mention?? 
+    # TODO remove the ones where the website is disclose? 
+    # TODO remove the ones where the summary mention disclose but that this is not a named entity
+    # TODO figure out a strategy when there is no summary 
+    # TODO go into the website for the filtered links and check for the mention?? For instance, we have some articles mentioning previous articles, and the mention to disclose is related to this old article instead of the new one. 
+    # TODO do the news extraction from google alerts. 
+    # TODO language detection
 
 main()
 
